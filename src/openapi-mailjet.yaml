@@ -8,6 +8,9 @@ info:
   contact: {}
 servers:
   - url: https://api.mailjet.com
+    description: US Mailjet
+  - url: https://api.eu.mailjet.com
+    description: EU Mailjet
 paths:
   /v3.1/send:
     post:
