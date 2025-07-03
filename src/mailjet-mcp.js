@@ -5,14 +5,15 @@ import https from "node:https";
 import { createReadStream } from "node:fs";
 import { resolve } from "node:path";
 import process from "node:process";
-import { z } from "zod/v4";
+import { z } from "zod/v3";
 import { MailjetApiSchema } from "./mailjet-openapi-schema.js";
+import packageInfo from "../package.json" with { type: "json" };
 
 const __dirname = import.meta.dirname;
 
 export const server = new McpServer({
   name: "mailjet",
-  version: "1.0.0",
+  version: packageInfo.version,
 });
 
 // Mailjet API authentication credentials in the documented BASIC Auth form "api_key:secret_key"
@@ -24,120 +25,51 @@ const API_HOSTNAME = `api.${API_REGION ? `${API_REGION}.` : ''}mailjet.com`;
 // Path to openapi spec file
 const OPENAPI_SPEC = resolve(__dirname, "openapi-mailjet.yaml");
 
-/** Supported Mailjet API endpoints */
-const endpoints = {
-  /** @type {readonly string[]} DELETE - List of DELETE endpoints supported by the API */
-  DELETE: [],
-  /** @type {readonly string[]} GET - List of GET endpoints supported by the API */
-  GET: [
-    /// EMAIL APIS
-    // MESSAGE API
-    "/v3/REST/message",
-    "/v3/REST/message/{message_ID}",
-    "/v3/REST/messagehistory/{message_ID}",
-    "/v3/REST/messageinformation",
-    "/v3/REST/messageinformation/{message_ID}",
-    // CONTACTS API
-    "/v3/REST/contact",
-    "/v3/REST/contact/{contact_ID}",
-    "/v3/REST/contact/{contact_ID}/getcontactslists",
-    "/v3/REST/contact/managemanycontacts/{Job_ID}",
-    "/v3/REST/contactmetadata",
-    "/v3/REST/contactdata",
-    "/v3/REST/contactdata/{contact_ID}",
-    "/v3/REST/contactslist",
-    "/v3/REST/contactslist/{list_ID}",
-    "/v3/REST/contactslist/{list_ID}/importlist/{job_ID}",
-    "/v3/REST/contactslist/{list_ID}/managemanycontacts/{job_ID}",
-    "/v3/REST/csvimport/{importjob_ID}",
-    "/v3/REST/contactslistsignup",
-    "/v3/REST/contactslistsignup/{signuprequest_ID}",
-    "/v3/REST/listrecipient",
-    "/v3/REST/listrecipient/{listrecipient_ID}",
-    // CAMPAIGNS API
-    "/v3/REST/campaign",
-    "/v3/REST/campaign/{campaign_ID}",
-    "/v3/REST/campaigndraft",
-    "/v3/REST/campaigndraft/{draft_ID}",
-    "/v3/REST/campaigndraft/{draft_ID}/detailcontent",
-    "/v3/REST/campaigndraft/{draft_ID}/schedule",
-    "/v3/REST/campaigndraft/{draft_ID}/status",
-    "/v3/REST/campaignoverview",
-    "/v3/REST/campaignoverview/{IDType}|{ID}",
-    // SEGMENTATION API
-    "/v3/REST/contactfilter",
-    "/v3/REST/contactfilter/{contactfilter_ID}",
-    // TEMPLATES API
-    "/v3/REST/template",
-    "/v3/REST/template/{template_ID}",
-    "/v3/REST/template/{template_ID}/detailcontent",
-    // STATISTICS API
-    "/v3/REST/statcounters",
-    "/v3/REST/contactstatistics",
-    "/v3/REST/contactstatistics/{contact_ID}",
-    "/v3/REST/listrecipientstatistics",
-    "/v3/REST/listrecipientstatistics/{listrecipient_ID}",
-    "/v3/REST/geostatistics",
-    "/v3/REST/statistics/link-click",
-    "/v3/REST/toplinkclicked",
-    "/v3/REST/statistics/recipient-esp",
-    "/v3/REST/useragentstatistics",
-    // Message Events API
-    "/v3/REST/bouncestatistics",
-    "/v3/REST/bouncestatistics/{message_ID}",
-    "/v3/REST/clickstatistics",
-    "/v3/REST/openinformation",
-    "/v3/REST/openinformation/{message_ID}",
-    // Webhooks API
-    "/v3/REST/eventcallbackurl",
-    "/v3/REST/eventcallbackurl/{url_ID}",
-    // Parse API
-    "/v3/REST/parseroute",
-    "/v3/REST/parseroute/{parseroute_ID}",
-    // SENDER ADDRESS API
-    "/v3/REST/sender",
-    "/v3/REST/sender/{sender_ID}",
-    "/v3/REST/metasender",
-    "/v3/REST/metasender/{metasender_ID}",
-    // DOMAINS API
-    "/v3/REST/dns",
-    "/v3/REST/dns/{dns_ID}",
-    // ACCOUNT SETTINGS API
-    "/v3/REST/apikey",
-    "/v3/REST/apikey/{apikey_ID}",
-    "/v3/REST/myprofile",
-    "/v3/REST/user",
-    // LEGACY NEWSLETTER API
-    "/v3/REST/newsletter",
-    "/v3/REST/newsletter/{newsletter_ID}",
-    "/v3/REST/newsletter/{newsletter_ID}/detailcontent",
-    "/v3/REST/newsletter/{newsletter_ID}/schedule",
-    "/v3/REST/newsletter/{newsletter_ID}/status",
-    // LEGACY STATISTICS API
-    "/v3/REST/messagestatistics",
-    "/v3/REST/messagesentstatistics",
-    "/v3/REST/messagesentstatistics/{message_ID}",
-    "/v3/REST/campaigngraphstatistics",
-    "/v3/REST/campaignstatistics",
-    "/v3/REST/apikeytotals",
-    "/v3/REST/domainstatistics",
-    "/v3/REST/graphstatistics",
-    "/v3/REST/liststatistics",
-    "/v3/REST/liststatistics/{List_ID}",
-    "/v3/REST/openstatistics",
-    "/v3/REST/senderstatistics",
-    "/v3/REST/senderstatistics/{sender_ID}",
-    /// SMS APIS
-    "/v4/sms",
-    "/v4/sms/{sms_ID}",
-    "/v4/sms/count",
-    "/v4/sms/export/{Job_ID}",
-  ],
-  /** @type {readonly string[]} PUT - List of PUT endpoints supported by the API */
-  PUT: [],
-  /** @type {readonly string[]} POST - List of POST endpoints supported by the API */
-  POST: ["/v3/send", "/v3.1/send"],
-};
+/**
+ * Extracts all endpoints from the OpenAPI specification and organizes them by HTTP method.
+ *
+ * @param {z.infer<typeof MailjetApiSchema>} openApiSpec - Parsed OpenAPI specification
+ */
+function extractEndpoints(openApiSpec) {
+  try {
+    // Initialize the endpoints dictionary
+    const endpoints = {
+      /** @type {string[]} DELETE - List of DELETE endpoints supported by the API */
+      DELETE: [],
+      /** @type {string[]} GET - List of GET endpoints supported by the API */
+      GET: [],
+      /** @type {string[]} PUT - List of PUT endpoints supported by the API */
+      PUT: [],
+      /** @type {string[]} POST - List of POST endpoints supported by the API */
+      POST: [],
+    };
+
+    const paths = openApiSpec.paths;
+
+    Object.keys(paths).forEach((path) => {
+      const pathItem = paths[path];
+
+      // Check for each HTTP method
+      if (pathItem.get) {
+        endpoints.GET.push(path);
+      }
+      if (pathItem.post) {
+        endpoints.POST.push(path);
+      }
+      if (pathItem.put) {
+        endpoints.PUT.push(path);
+      }
+      if (pathItem.delete) {
+        endpoints.DELETE.push(path);
+      }
+    });
+
+    return endpoints;
+  } catch (error) {
+    console.error("Error extracting endpoints:", error);
+    throw error;
+  }
+}
 
 /**
  * Loads and parses the OpenAPI specification from a YAML file
@@ -176,8 +108,8 @@ export async function loadOpenApiSpec(filePath) {
 /**
  * Retrieves operation details from the OpenAPI spec for a given method and path
  * @param {z.infer<typeof MailjetApiSchema>} openApiSpec - Parsed OpenAPI specification
- * @param {keyof typeof endpoints} method - HTTP method (GET, POST, etc.)
- * @param { typeof endpoints[keyof typeof endpoints][number] } path - API endpoint path
+ * @param {keyof ReturnType<typeof extractEndpoints>} method - HTTP method (GET, POST, etc.)
+ * @param { ReturnType<typeof extractEndpoints>[keyof ReturnType<typeof extractEndpoints>][number] } path - API endpoint path
  * @returns Operation details or null if not found
  */
 export function getOperationDetails(openApiSpec, method, path) {
@@ -192,7 +124,7 @@ export function getOperationDetails(openApiSpec, method, path) {
     /** @type {NonNullable<z.infer<typeof MailjetApiSchema>["paths"][string]["delete" | "get" | "post" | "put"]>} */
     // @ts-ignore We know this exists because of the if condition above
     operation: openApiSpec.paths[path][lowerMethod],
-    operationId: `${method}-${sanitizeToolId(path).replace(/-+/g, "-")}`,
+    operationId: openApiSpec.paths[path]["get"]?.operationId ?? `${method}-${sanitizeToolId(path).replace(/-+/g, "-")}`,
   };
 }
 
@@ -209,20 +141,13 @@ export function openapiToZod(schema, fullSpec) {
 
   // Handle schema references (e.g. #/components/schemas/...)
   if (schema.$ref) {
-    // For #/components/schemas/EventSeverityType type references
+    // For #/components/schemas/ type references
     if (schema.$ref.startsWith("#/")) {
       const refPath = schema.$ref.substring(2).split("/");
-
-      // Navigate through the object using the path segments
       /** @type any */
       let referenced = fullSpec;
       for (const segment of refPath) {
         if (!referenced || !referenced[segment]) {
-          // If we can't resolve it but know it's EventSeverityType, use our knowledge
-          if (segment === "EventSeverityType" || schema.$ref.endsWith("EventSeverityType")) {
-            return z.enum(["temporary", "permanent"]).describe("Filter by event severity");
-          }
-
           console.error(`Failed to resolve reference: ${schema.$ref}, segment: ${segment}`);
           return z.any().describe(`Failed reference: ${schema.$ref}`);
         }
@@ -274,7 +199,7 @@ export function openapiToZod(schema, fullSpec) {
         return z.record(z.any(), z.any());
       }
 
-      /** @type Record<string, unknown> */
+      /** @type Record<string, z.ZodType> */
       const shape = {};
       for (const [key, prop] of Object.entries(schema.properties)) {
         shape[key] = schema.required?.includes(key)
@@ -286,7 +211,7 @@ export function openapiToZod(schema, fullSpec) {
     default:
       // For schemas without a type but with properties
       if (schema.properties) {
-        /** @type Record<string, unknown> */
+        /** @type Record<string, z.ZodType> */
         const shape = {};
         for (const [key, prop] of Object.entries(schema.properties)) {
           shape[key] = schema.required?.includes(key)
@@ -352,7 +277,6 @@ export function processRequestBody(requestBody, paramsSchema, openApiSpec) {
 
   let bodySchema = requestBody.content[contentType].schema;
 
-  // TODO: Remove if not needed
   // Handle schema references.
   if (bodySchema?.$ref) {
     bodySchema = resolveReference(bodySchema.$ref, openApiSpec);
@@ -437,7 +361,7 @@ export function processPathParameters(path, operation, params) {
  * Separates parameters into query parameters and body parameters
  * @param {Record<string, string | number>} params - Request parameters
  * @param {NonNullable<ReturnType<typeof getOperationDetails>>['operation']} operation - OpenAPI operation object
- * @param {keyof typeof endpoints} method - HTTP method (GET, POST, etc.)
+ * @param {keyof ReturnType<typeof extractEndpoints>} method - HTTP method (GET, POST, etc.)
  * @returns Separated query and body parameters
  */
 export function separateParameters(params, operation, method) {
@@ -492,7 +416,7 @@ export function appendQueryString(path, queryParams) {
 
 /**
  * Makes an authenticated request to the Mailjet API
- * @param {keyof typeof endpoints} method - HTTP method (GET, POST, etc.)
+ * @param {keyof ReturnType<typeof extractEndpoints>} method - HTTP method (GET, POST, etc.)
  * @param {string} path - API endpoint path
  * @param {Record<string, string | number> | null} data - Request payload data (for POST/PUT requests)
  * @returns {Promise<JSON>} - Response data as JSON
@@ -503,7 +427,7 @@ export async function makeMailjetRequest(method, path, data = null) {
     const cleanPath = path.startsWith("/") ? path.substring(1) : path;
 
     if (!API_KEY) {
-      throw new Error(`Required API_KEY environment variable is missing`);
+      throw new Error(`Required MAILJET_API_KEY environment variable is missing`);
     }
 
     // Create basic auth credentials from API key
@@ -515,6 +439,7 @@ export async function makeMailjetRequest(method, path, data = null) {
       headers: {
         Authorization: `Basic ${auth}`,
         "Content-Type": "application/json",
+        "User-Agent": `Mailjet/MCP-SERVER-STDIO/${packageInfo.version}`
       },
     };
 
@@ -570,12 +495,12 @@ export async function makeMailjetRequest(method, path, data = null) {
  * @param {string} toolId - Unique tool identifier
  * @param {string} toolDescription - Human-readable description
  * @param {Record<string, z.ZodType>} paramsSchema - Zod schema for parameters
- * @param { keyof typeof endpoints } method - Supported methods (GET, POST, etc.)
+ * @param {keyof ReturnType<typeof extractEndpoints>} method - Supported methods (GET, POST, etc.)
  * @param {string} path - API endpoint path
  * @param {NonNullable<ReturnType<typeof getOperationDetails>>['operation']} operation - OpenAPI operation object
  */
 export function registerTool(toolId, toolDescription, paramsSchema, method, path, operation) {
-  server.tool(toolId, toolDescription, {query: paramsSchema}, async (params) => {
+  server.tool(toolId, toolDescription, paramsSchema, async (params) => {
     try {
       const { actualPath, remainingParams } = processPathParameters(path, operation, params);
       const { queryParams, bodyParams } = separateParameters(remainingParams, operation, method);
@@ -614,6 +539,8 @@ export function registerTool(toolId, toolDescription, paramsSchema, method, path
  * @param {z.infer<typeof MailjetApiSchema>} openApiSpec - Parsed OpenAPI specification
  */
 export function generateToolsFromOpenApi(openApiSpec) {
+  const endpoints = extractEndpoints(openApiSpec);
+
   for (const path of endpoints.GET) {
     const method = "GET";
     try {
@@ -658,8 +585,9 @@ export async function main() {
     // Connect to the transport
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    // Send to console.error to avoid error on server startup
-    console.error("Mailjet MCP Server running on stdio");
+    // This is an STDIO server and log msgs are sent to stdio by default
+    // So send to console.error to avoid errors on server startup
+    console.error(`Mailjet MCP Server ${packageInfo.version} running on stdio`);
   } catch (error) {
     console.error("Fatal error in main():", error);
     if (process.env.NODE_ENV !== "test") {
