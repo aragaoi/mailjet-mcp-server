@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 
-import * as serverModule from "../src/mailjet-mcp.js";
+import * as serverModule from "../src/shared/mailjet-utils.js";
 
 // Mock OpenAPI spec for testing
 const mockOpenApiSpec = {

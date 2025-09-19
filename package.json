@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "test": "NODE_ENV=test node --test tests/mailjet-mcp.test.js"
+    "test": "NODE_ENV=test node --test tests/*.test.js"
   },
   "keywords": [
     "AI",
